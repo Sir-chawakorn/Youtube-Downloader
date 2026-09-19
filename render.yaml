@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: youtube-downloader-backend
+    runtime: docker
+    plan: free
+    region: singapore
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: PORT
+        value: 8000
+      - key: CORS_ALLOW_ALL
+        value: "true"
