@@ -13,11 +13,31 @@ import {
   FileText,
   Cpu,
   RefreshCw,
-  RotateCcw
+  RotateCcw,
+  Server,
+  ExternalLink,
+  Wifi,
+  WifiOff
 } from "lucide-react";
-import { api } from "@/lib/api";
+import { api, isLocalBackend } from "@/lib/api";
 import { AppSettings, SystemStatus, CommonFolder } from "@/types/download";
 import Toast, { ToastMessage } from "@/components/Toast";
+
+const defaultFallbackSettings: AppSettings = {
+  default_folder: "~/Downloads",
+  default_video_quality: "best",
+  default_video_format: "mp4",
+  default_audio_quality: "best",
+  default_audio_format: "mp3",
+  concurrent_downloads: 2,
+  embed_metadata: true,
+  embed_thumbnail: false,
+  clipboard_detection: false,
+  filename_template: "%(title)s.%(ext)s",
+  ffmpeg_path: "ffmpeg",
+  ytdlp_path: "yt-dlp",
+  theme: "dark",
+};
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<AppSettings | null>(null);
@@ -26,27 +46,104 @@ export default function SettingsPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [toast, setToast] = useState<ToastMessage | null>(null);
 
+  // Backend API connection states
+  const [backendUrl, setBackendUrl] = useState("");
+  const [isTestingBackend, setIsTestingBackend] = useState(false);
+  const [backendStatus, setBackendStatus] = useState<"connected" | "offline" | "checking">("checking");
+
   const loadData = async () => {
+    setBackendUrl(api.getApiBase());
+
     try {
-      const [s, sys, cf] = await Promise.all([
+      const [s, sys, cf] = await Promise.allSettled([
         api.getSettings(),
         api.getSystemStatus(),
         api.getCommonFolders(),
       ]);
-      setSettings(s);
-      setSystemStatus(sys);
-      setCommonFolders(cf.folders);
-    } catch (err: any) {
-      setToast({
-        type: "error",
-        text: err.message || "ไม่สามารถโหลดการตั้งค่าได้",
-      });
+
+      if (s.status === "fulfilled") {
+        setSettings(s.value);
+        setBackendStatus("connected");
+      } else {
+        setSettings(defaultFallbackSettings);
+        setBackendStatus("offline");
+      }
+
+      if (sys.status === "fulfilled") {
+        setSystemStatus(sys.value);
+      } else {
+        setSystemStatus(null);
+      }
+
+      if (cf.status === "fulfilled") {
+        setCommonFolders(cf.value.folders);
+      } else {
+        setCommonFolders([]);
+      }
+    } catch {
+      setSettings(defaultFallbackSettings);
+      setBackendStatus("offline");
     }
   };
 
   useEffect(() => {
     loadData();
   }, []);
+
+  const handleTestBackend = async () => {
+    if (!backendUrl.trim()) return;
+    setIsTestingBackend(true);
+    let target = backendUrl.trim().replace(/\/+$/, "");
+    if (!target.endsWith("/api")) {
+      target = `${target}/api`;
+    }
+
+    try {
+      const res = await fetch(`${target}/health`, { signal: AbortSignal.timeout(4000) });
+      if (res.ok) {
+        setBackendStatus("connected");
+        setToast({
+          type: "success",
+          text: "เชื่อมต่อ Backend สำเร็จ! เซิร์ฟเวอร์ตอบสนองปกติ",
+        });
+      } else {
+        setBackendStatus("offline");
+        setToast({
+          type: "error",
+          text: `Backend ตอบกลับด้วย Error HTTP ${res.status}`,
+        });
+      }
+    } catch (err: any) {
+      setBackendStatus("offline");
+      setToast({
+        type: "error",
+        text: "ไม่สามารถเชื่อมต่อ Backend ได้ กรุณาตรวจสอบ URL หรือเปิด CORS",
+      });
+    } finally {
+      setIsTestingBackend(false);
+    }
+  };
+
+  const handleSaveBackendUrl = () => {
+    if (!backendUrl.trim()) return;
+    api.setCustomApiUrl(backendUrl);
+    setToast({
+      type: "success",
+      text: "บันทึก Backend URL แล้ว กำลังเชื่อมต่อใหม่...",
+    });
+    loadData();
+  };
+
+  const handleResetBackendUrl = () => {
+    api.resetCustomApiUrl();
+    const defaultUrl = api.getApiBase();
+    setBackendUrl(defaultUrl);
+    setToast({
+      type: "success",
+      text: "รีเซ็ต Backend URL กลับเป็นค่าเริ่มต้นแล้ว",
+    });
+    loadData();
+  };
 
   const handlePickFolder = async () => {
     try {
@@ -55,7 +152,7 @@ export default function SettingsPage() {
         setSettings({ ...settings, default_folder: res.path });
       }
     } catch {
-      // Ignored
+      // Ignored in remote web mode
     }
   };
 
@@ -72,7 +169,7 @@ export default function SettingsPage() {
     } catch (err: any) {
       setToast({
         type: "error",
-        text: err.message || "บันทึกการตั้งค่าไม่สำเร็จ",
+        text: err.message || "บันทึกการตั้งค่าไม่สำเร็จ (โปรดตรวจสอบการเชื่อมต่อ Backend)",
       });
     } finally {
       setIsSaving(false);
@@ -110,13 +207,13 @@ export default function SettingsPage() {
   return (
     <div className="max-w-4xl mx-auto px-4 py-8 space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-slate-100">
             ตั้งค่าโปรแกรม (Settings)
           </h1>
           <p className="text-xs sm:text-sm text-slate-400">
-            ปรับแต่งค่าเริ่มต้นสำหรับโฟลเดอร์ คุณภาพวิดีโอ/เสียง และฟังก์ชันการทำงาน
+            ปรับแต่งการเชื่อมต่อ Backend, คุณภาพวิดีโอ/เสียง และฟังก์ชันการทำงาน
           </p>
         </div>
 
@@ -130,6 +227,67 @@ export default function SettingsPage() {
         </button>
       </div>
 
+      {/* Backend Connection Card (Crucial for Vercel deployment) */}
+      <div className="glass-card rounded-2xl p-5 border border-white/10 space-y-4 shadow-xl">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-bold text-slate-200 uppercase tracking-wider flex items-center gap-2">
+            <Server className="w-4 h-4 text-red-400" />
+            <span>การเชื่อมต่อ Backend Server (API URL)</span>
+          </h2>
+          <div className="flex items-center gap-1.5 text-xs font-semibold">
+            {backendStatus === "connected" ? (
+              <span className="flex items-center gap-1.5 text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20">
+                <Wifi className="w-3.5 h-3.5" /> ออนไลน์
+              </span>
+            ) : (
+              <span className="flex items-center gap-1.5 text-rose-400 bg-rose-500/10 px-2.5 py-1 rounded-lg border border-rose-500/20">
+                <WifiOff className="w-3.5 h-3.5" /> ออฟไลน์
+              </span>
+            )}
+          </div>
+        </div>
+
+        <p className="text-xs text-slate-400">
+          เมื่อ Deploy บน Vercel คุณสามารถระบุ URL ของ Backend ที่ Deploy ไว้บน Render / Railway / Fly.io หรือเซิร์ฟเวอร์ส่วนตัวได้ที่นี่:
+        </p>
+
+        <div className="flex flex-col sm:flex-row gap-2">
+          <input
+            type="text"
+            value={backendUrl}
+            onChange={(e) => setBackendUrl(e.target.value)}
+            placeholder="http://127.0.0.1:8000/api หรือ https://your-backend.onrender.com/api"
+            className="flex-1 bg-slate-900/80 px-3.5 py-2.5 rounded-xl border border-white/10 text-xs sm:text-sm font-mono text-slate-200 outline-none focus:border-red-500"
+          />
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={handleTestBackend}
+              disabled={isTestingBackend}
+              className="flex items-center gap-1.5 px-3.5 py-2.5 bg-white/10 hover:bg-white/15 text-slate-200 rounded-xl text-xs font-semibold border border-white/10 transition-colors"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isTestingBackend ? "animate-spin" : ""}`} />
+              <span>{isTestingBackend ? "กำลังทดสอบ..." : "ทดสอบ"}</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleSaveBackendUrl}
+              className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-semibold transition-colors"
+            >
+              บันทึก URL
+            </button>
+            <button
+              type="button"
+              onClick={handleResetBackendUrl}
+              className="px-3 py-2.5 bg-white/5 hover:bg-white/10 text-slate-400 hover:text-slate-200 rounded-xl text-xs transition-colors"
+              title="รีเซ็ตกลับเป็นค่าเริ่มต้น"
+            >
+              รีเซ็ต
+            </button>
+          </div>
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {/* Main Settings Left Column */}
         <div className="md:col-span-2 space-y-6">
@@ -137,7 +295,7 @@ export default function SettingsPage() {
           <div className="glass-card rounded-2xl p-5 border border-white/10 space-y-3">
             <h2 className="text-sm font-bold text-slate-200 uppercase tracking-wider flex items-center gap-2">
               <Folder className="w-4 h-4 text-red-400" />
-              <span>โฟลเดอร์บันทึกไฟล์เริ่มต้น</span>
+              <span>โฟลเดอร์บันทึกไฟล์เริ่มต้น (Server / Local Path)</span>
             </h2>
 
             <div className="flex gap-2">
@@ -147,34 +305,38 @@ export default function SettingsPage() {
                 onChange={(e) => setSettings({ ...settings, default_folder: e.target.value })}
                 className="flex-1 bg-slate-900/80 px-3.5 py-2.5 rounded-xl border border-white/10 text-xs sm:text-sm font-mono text-slate-200 outline-none focus:border-red-500"
               />
-              <button
-                type="button"
-                onClick={handlePickFolder}
-                className="flex items-center gap-1.5 px-3.5 py-2.5 bg-white/5 hover:bg-white/10 text-slate-200 rounded-xl text-xs font-semibold border border-white/10 transition-colors shrink-0"
-              >
-                <FolderOpen className="w-4 h-4 text-red-400" />
-                <span>เลือก</span>
-              </button>
+              {isLocalBackend() && (
+                <button
+                  type="button"
+                  onClick={handlePickFolder}
+                  className="flex items-center gap-1.5 px-3.5 py-2.5 bg-white/5 hover:bg-white/10 text-slate-200 rounded-xl text-xs font-semibold border border-white/10 transition-colors shrink-0"
+                >
+                  <FolderOpen className="w-4 h-4 text-red-400" />
+                  <span>เลือก</span>
+                </button>
+              )}
             </div>
 
-            {/* Common folders */}
-            <div className="flex flex-wrap items-center gap-1.5 pt-1">
-              <span className="text-[11px] text-slate-500">ทางลัด:</span>
-              {commonFolders.map((f) => (
-                <button
-                  key={f.path}
-                  type="button"
-                  onClick={() => setSettings({ ...settings, default_folder: f.path })}
-                  className={`px-2 py-0.5 rounded-lg text-xs border transition-colors ${
-                    settings.default_folder === f.path
-                      ? "bg-red-500/20 text-red-300 border-red-500/40"
-                      : "bg-white/5 text-slate-400 hover:text-slate-200 border-white/5"
-                  }`}
-                >
-                  {f.name}
-                </button>
-              ))}
-            </div>
+            {/* Common folders (Local mode only) */}
+            {commonFolders.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                <span className="text-[11px] text-slate-500">ทางลัด:</span>
+                {commonFolders.map((f) => (
+                  <button
+                    key={f.path}
+                    type="button"
+                    onClick={() => setSettings({ ...settings, default_folder: f.path })}
+                    className={`px-2 py-0.5 rounded-lg text-xs border transition-colors ${
+                      settings.default_folder === f.path
+                        ? "bg-red-500/20 text-red-300 border-red-500/40"
+                        : "bg-white/5 text-slate-400 hover:text-slate-200 border-white/5"
+                    }`}
+                  >
+                    {f.name}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Defaults Video & Audio */}
@@ -357,7 +519,7 @@ export default function SettingsPage() {
                 {/* Disk Space */}
                 <div className="p-3 rounded-xl bg-slate-900/70 border border-white/5 space-y-1">
                   <div className="flex items-center justify-between">
-                    <span className="font-semibold text-slate-300">พื้นที่ฮาร์ดดิสก์ว่าง:</span>
+                    <span className="font-semibold text-slate-300">พื้นที่ว่างบน Server:</span>
                     <span className="text-slate-200 font-bold font-mono">
                       {systemStatus.disk_free_gb} GB
                     </span>
@@ -368,7 +530,14 @@ export default function SettingsPage() {
                 </div>
               </div>
             ) : (
-              <p className="text-xs text-slate-500">กำลังตรวจสอบสถานะ...</p>
+              <div className="p-3 rounded-xl bg-slate-900/70 border border-white/5 text-xs text-slate-400 space-y-1">
+                <p className="text-rose-400 font-semibold flex items-center gap-1">
+                  <AlertCircle className="w-3.5 h-3.5" /> ไม่สามารถดึงสถานะ Engine
+                </p>
+                <p className="text-[11px]">
+                  กรุณาตรวจสอบว่า Backend Server กำลังทำงานและ URL ถูกต้อง
+                </p>
+              </div>
             )}
 
             <button
@@ -381,13 +550,13 @@ export default function SettingsPage() {
             </button>
           </div>
 
-          {/* Privacy Note (PRD #75) */}
+          {/* Cloud & Local Usage Note */}
           <div className="p-4 rounded-2xl bg-white/5 border border-white/10 text-xs text-slate-400 space-y-1.5">
             <p className="font-semibold text-slate-300 flex items-center gap-1.5">
-              <span>🔒 ความเป็นส่วนตัวระดับสูงสุด (Local-First)</span>
+              <span>☁️ Vercel + Cloud / Local Backend</span>
             </p>
             <p className="text-[11px] leading-relaxed">
-              โปรแกรมทำงานแบบ Local-First บนเครื่องของคุณ 100% ไม่มีการส่งข้อมูล URL, ประวัติการดาวน์โหลด หรือไฟล์ใดๆ ไปยังเซิร์ฟเวอร์ภายนอก
+              เมื่อเปิดใช้งานบน Vercel ไฟล์ที่ดาวน์โหลดจะถูกส่งตรงเข้าเครื่องผู้ใช้งานผ่านเว็บเบราว์เซอร์ทันที (Direct Browser Download) ไม่เปลืองพื้นที่บนเซิร์ฟเวอร์
             </p>
           </div>
         </div>

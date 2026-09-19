@@ -16,9 +16,10 @@ import {
   AlertCircle,
   XCircle,
   FileVideo,
-  FileAudio
+  FileAudio,
+  HardDriveDownload
 } from "lucide-react";
-import { api } from "@/lib/api";
+import { api, isLocalBackend } from "@/lib/api";
 import { DownloadRecord } from "@/types/video";
 import { formatBytes, formatDate } from "@/lib/utils";
 import Toast, { ToastMessage } from "@/components/Toast";
@@ -248,19 +249,37 @@ export default function HistoryPage() {
                   {item.status === "completed" && (
                     <>
                       <button
-                        onClick={() => handleOpenFile(item.id)}
-                        className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-200 hover:text-white border border-white/10 transition-colors"
-                        title="เปิดไฟล์ (Open File)"
+                        onClick={() => {
+                          api.triggerBrowserDownload(item.id, `${item.title}.${item.format}`);
+                          setToast({
+                            type: "success",
+                            text: `เริ่มดาวน์โหลด "${item.title}" ลงเครื่องแล้ว`,
+                          });
+                        }}
+                        className="p-2 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 hover:text-emerald-300 border border-emerald-500/30 transition-colors"
+                        title="ดาวน์โหลดลงเครื่อง (Download to Device)"
                       >
-                        <Play className="w-4 h-4 text-emerald-400" />
+                        <HardDriveDownload className="w-4 h-4 text-emerald-400" />
                       </button>
-                      <button
-                        onClick={() => handleOpenFolder(item.id)}
-                        className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-200 hover:text-white border border-white/10 transition-colors"
-                        title="เปิดโฟลเดอร์ (Open Folder)"
-                      >
-                        <FolderOpen className="w-4 h-4 text-amber-400" />
-                      </button>
+
+                      {isLocalBackend() && (
+                        <>
+                          <button
+                            onClick={() => handleOpenFile(item.id)}
+                            className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-200 hover:text-white border border-white/10 transition-colors"
+                            title="เปิดไฟล์ (Open File)"
+                          >
+                            <Play className="w-4 h-4 text-emerald-400" />
+                          </button>
+                          <button
+                            onClick={() => handleOpenFolder(item.id)}
+                            className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-200 hover:text-white border border-white/10 transition-colors"
+                            title="เปิดโฟลเดอร์ (Open Folder)"
+                          >
+                            <FolderOpen className="w-4 h-4 text-amber-400" />
+                          </button>
+                        </>
+                      )}
                     </>
                   )}
 
