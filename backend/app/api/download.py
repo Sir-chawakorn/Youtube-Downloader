@@ -1,7 +1,10 @@
 import uuid
 import asyncio
 import json
+import os
+import mimetypes
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
@@ -122,3 +125,38 @@ async def retry_download(download_id: str):
     new_id = str(uuid.uuid4())
     download_service.start_download(new_id, req)
     return StartDownloadResponse(download_id=new_id, status="queued")
+
+
+@router.get("/{download_id}/file")
+async def download_file_stream(download_id: str):
+    """
+    Direct browser file download endpoint for remote (Vercel) and local users.
+    Returns HTTP 200 with Content-Disposition: attachment to trigger browser download.
+    """
+    record = db_service.get_download(download_id)
+    file_path = None
+    if record and record.file_path:
+        file_path = record.file_path
+    else:
+        active = download_service.get_active(download_id)
+        if active and active.file_path:
+            file_path = active.file_path
+
+    if not file_path or not os.path.exists(file_path):
+        raise HTTPException(
+            status_code=404,
+            detail="ไม่พบไฟล์ในระบบ หรือไฟล์อาจถูกลบ/ย้ายไปแล้ว",
+        )
+
+    filename = os.path.basename(file_path)
+    mime_type, _ = mimetypes.guess_type(file_path)
+    if not mime_type:
+        mime_type = "application/octet-stream"
+
+    return FileResponse(
+        path=file_path,
+        filename=filename,
+        media_type=mime_type,
+        content_disposition_type="attachment",
+    )
+
