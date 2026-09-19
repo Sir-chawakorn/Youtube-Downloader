@@ -145,6 +145,15 @@ export const api = {
     return fetchJson<DownloadRecord[]>("/history");
   },
 
+  async getDownloadRecord(downloadId: string): Promise<DownloadRecord | null> {
+    try {
+      const list = await fetchJson<DownloadRecord[]>("/history");
+      return list.find((r) => r.id === downloadId) || null;
+    } catch {
+      return null;
+    }
+  },
+
   async deleteHistoryItem(downloadId: string): Promise<{ success: boolean; message: string }> {
     return fetchJson<{ success: boolean; message: string }>(`/history/${downloadId}`, {
       method: "DELETE",
