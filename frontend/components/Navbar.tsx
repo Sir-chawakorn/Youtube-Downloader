@@ -12,21 +12,29 @@ import {
   AlertCircle, 
   Moon, 
   Sun,
-  Play
+  Radio,
+  Server
 } from "lucide-react";
-import { api } from "@/lib/api";
+import { api, isLocalBackend } from "@/lib/api";
 import { SystemStatus } from "@/types/download";
 
 export default function Navbar() {
   const pathname = usePathname();
   const [status, setStatus] = useState<SystemStatus | null>(null);
+  const [isConnected, setIsConnected] = useState<boolean | null>(null);
   const [theme, setTheme] = useState<"dark" | "light">("dark");
 
   useEffect(() => {
     // Check system status
     api.getSystemStatus()
-      .then(setStatus)
-      .catch(() => setStatus(null));
+      .then((data) => {
+        setStatus(data);
+        setIsConnected(true);
+      })
+      .catch(() => {
+        setStatus(null);
+        setIsConnected(false);
+      });
 
     // Theme check
     const saved = localStorage.getItem("app_theme") as "dark" | "light" | null;
@@ -36,7 +44,7 @@ export default function Navbar() {
         document.documentElement.classList.add("light");
       }
     }
-  }, []);
+  }, [pathname]);
 
   const toggleTheme = () => {
     const next = theme === "dark" ? "light" : "dark";
@@ -61,11 +69,11 @@ export default function Navbar() {
           </div>
           <div>
             <div className="flex items-center gap-1.5 font-bold text-lg tracking-tight">
-              <span>Local</span>
-              <span className="text-red-500">YouTube</span>
-              <span>Downloader</span>
+              <span>YouTube</span>
+              <span className="text-red-500">Downloader</span>
+              <span className="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-red-500/20 text-red-400 border border-red-500/30">Web</span>
             </div>
-            <p className="text-xs text-slate-400 font-medium">Download directly to your computer</p>
+            <p className="text-xs text-slate-400 font-medium hidden sm:block">ดาวน์โหลดวิดีโอ & เสียงลงเครื่องได้ทันที</p>
           </div>
         </Link>
 
@@ -106,30 +114,27 @@ export default function Navbar() {
           </Link>
         </nav>
 
-        {/* Right Info: FFmpeg & Disk Space & Theme */}
-        <div className="hidden md:flex items-center gap-3">
-          {status && (
-            <div className="flex items-center gap-3 text-xs text-slate-300 bg-white/5 px-3 py-1.5 rounded-lg border border-white/10">
-              <div className="flex items-center gap-1.5">
-                {status.ffmpeg_installed ? (
-                  <>
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                    <span className="text-emerald-400 font-medium">FFmpeg พร้อม</span>
-                  </>
-                ) : (
-                  <>
-                    <AlertCircle className="w-3.5 h-3.5 text-amber-400" />
-                    <span className="text-amber-400 font-medium">ไม่มี FFmpeg</span>
-                  </>
-                )}
-              </div>
-              <div className="w-px h-3 bg-white/20" />
-              <div className="flex items-center gap-1.5 text-slate-400">
-                <HardDrive className="w-3.5 h-3.5" />
-                <span>พื้นที่ว่าง {status.disk_free_gb} GB</span>
-              </div>
+        {/* Right Info: Backend Status & Theme */}
+        <div className="flex items-center gap-2 sm:gap-3">
+          {/* Backend Status Indicator */}
+          {isConnected === true ? (
+            <div className="flex items-center gap-2 text-xs text-slate-300 bg-white/5 px-2.5 sm:px-3 py-1.5 rounded-lg border border-white/10">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="text-emerald-400 font-medium hidden sm:inline">Backend พร้อมใช้งาน</span>
+              {status?.ffmpeg_installed && (
+                <span className="text-slate-400 hidden lg:inline text-[11px]">• FFmpeg OK</span>
+              )}
             </div>
-          )}
+          ) : isConnected === false ? (
+            <Link
+              href="/settings"
+              className="flex items-center gap-1.5 text-xs text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 px-2.5 sm:px-3 py-1.5 rounded-lg border border-rose-500/30 transition-colors"
+              title="ไม่พบ Backend คลิกเพื่อตั้งค่า URL"
+            >
+              <span className="w-2 h-2 rounded-full bg-rose-500" />
+              <span className="font-semibold">ออฟไลน์ (ตั้งค่า URL)</span>
+            </Link>
+          ) : null}
 
           <button
             onClick={toggleTheme}

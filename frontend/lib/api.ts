@@ -1,10 +1,64 @@
 import { VideoMetadata, AnalyzeResponse, DownloadRecord } from "@/types/video";
 import { DownloadRequest, AppSettings, SystemStatus, CommonFolder } from "@/types/download";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api";
+export function getApiBase(): string {
+  if (typeof window !== "undefined") {
+    const custom = localStorage.getItem("yt_downloader_custom_api");
+    if (custom && custom.trim()) {
+      return custom.trim().replace(/\/+$/, "");
+    }
+  }
+  return (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api").replace(/\/+$/, "");
+}
+
+export function setCustomApiUrl(url: string) {
+  if (typeof window !== "undefined") {
+    let clean = url.trim().replace(/\/+$/, "");
+    if (!clean.endsWith("/api")) {
+      clean = `${clean}/api`;
+    }
+    localStorage.setItem("yt_downloader_custom_api", clean);
+  }
+}
+
+export function getCustomApiUrl(): string | null {
+  if (typeof window !== "undefined") {
+    return localStorage.getItem("yt_downloader_custom_api");
+  }
+  return null;
+}
+
+export function resetCustomApiUrl() {
+  if (typeof window !== "undefined") {
+    localStorage.removeItem("yt_downloader_custom_api");
+  }
+}
+
+export function isLocalBackend(): boolean {
+  const base = getApiBase();
+  return base.includes("127.0.0.1") || base.includes("localhost");
+}
+
+export function getDownloadFileUrl(downloadId: string): string {
+  return `${getApiBase()}/download/${downloadId}/file`;
+}
+
+export function triggerBrowserDownload(downloadId: string, filename?: string) {
+  if (typeof window === "undefined") return;
+  const fileUrl = getDownloadFileUrl(downloadId);
+  const a = document.createElement("a");
+  a.href = fileUrl;
+  if (filename) {
+    a.download = filename;
+  }
+  a.target = "_blank";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
 
 async function fetchJson<T>(endpoint: string, options?: RequestInit): Promise<T> {
-  const url = `${API_BASE}${endpoint}`;
+  const url = `${getApiBase()}${endpoint}`;
   const res = await fetch(url, {
     ...options,
     headers: {
@@ -28,6 +82,24 @@ async function fetchJson<T>(endpoint: string, options?: RequestInit): Promise<T>
 }
 
 export const api = {
+  getApiBase,
+  setCustomApiUrl,
+  getCustomApiUrl,
+  resetCustomApiUrl,
+  isLocalBackend,
+  getDownloadFileUrl,
+  triggerBrowserDownload,
+
+  async checkHealth(): Promise<boolean> {
+    try {
+      const base = getApiBase();
+      const res = await fetch(`${base}/health`, { method: "GET", signal: AbortSignal.timeout(3000) });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  },
+
   async analyzeUrl(url: string): Promise<AnalyzeResponse> {
     return fetchJson<AnalyzeResponse>("/analyze", {
       method: "POST",
@@ -55,7 +127,7 @@ export const api = {
   },
 
   getDownloadEventsUrl(downloadId: string): string {
-    return `${API_BASE}/download/${downloadId}/events`;
+    return `${getApiBase()}/download/${downloadId}/events`;
   },
 
   async getHistory(): Promise<DownloadRecord[]> {
