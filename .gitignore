@@ -37,6 +37,8 @@ backend/data/*.sqlite*
 *.sqlite3
 
 # Node.js & Next.js
+.vercel/
+frontend/.vercel/
 frontend/node_modules/
 frontend/.next/
 frontend/out/
