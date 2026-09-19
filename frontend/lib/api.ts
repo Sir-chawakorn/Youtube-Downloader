@@ -1,11 +1,22 @@
 import { VideoMetadata, AnalyzeResponse, DownloadRecord } from "@/types/video";
 import { DownloadRequest, AppSettings, SystemStatus, CommonFolder } from "@/types/download";
 
+export const DEFAULT_TUNNEL_API = "https://alias-admit-applicable-paper.trycloudflare.com/api";
+
 export function getApiBase(): string {
   if (typeof window !== "undefined") {
     const custom = localStorage.getItem("yt_downloader_custom_api");
     if (custom && custom.trim()) {
       return custom.trim().replace(/\/+$/, "");
+    }
+
+    // If running in browser on HTTPS (such as on Vercel), never call unencrypted http://127.0.0.1
+    if (window.location.protocol === "https:") {
+      const envUrl = process.env.NEXT_PUBLIC_API_URL;
+      if (envUrl && envUrl.startsWith("https://")) {
+        return envUrl.replace(/\/+$/, "");
+      }
+      return DEFAULT_TUNNEL_API;
     }
   }
   return (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api").replace(/\/+$/, "");
